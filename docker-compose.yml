@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Ana veritabanı
+  postgres:
+    image: postgres:15-alpine
+    container_name: iosp-postgres
+    environment:
+      POSTGRES_USER: iosp_user
+      POSTGRES_PASSWORD: iosp_secret_2024
+      POSTGRES_DB: iosp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iosp_user -d iosp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iosp-network
+
+  # Redis - Cache ve Session
+  redis:
+    image: redis:7-alpine
+    container_name: iosp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iosp-network
+
+  # Qdrant - Vector Database (RAG için)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: iosp-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    networks:
+      - iosp-network
+
+  # Ollama - Local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: iosp-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - iosp-network
+    # Mac M1/M2 için GPU desteği otomatik
+    # Linux NVIDIA için:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Django Backend
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iosp-web
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=django-insecure-change-this-in-production-iosp-2024
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=iosp_db
+      - DB_USER=iosp_user
+      - DB_PASSWORD=iosp_secret_2024
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama2
+      - OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+    volumes:
+      - .:/app
+      - static_data:/app/staticfiles
+      - media_data:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    networks:
+      - iosp-network
+    # Development mode - hot reload
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  # Celery Worker (opsiyonel - async işler için)
+  # celery:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: iosp-celery
+  #   command: celery -A iosp worker -l INFO
+  #   environment:
+  #     - DEBUG=True
+  #     - DB_HOST=postgres
+  #     - DB_NAME=iosp_db
+  #     - DB_USER=iosp_user
+  #     - DB_PASSWORD=iosp_secret_2024
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - CELERY_BROKER_URL=redis://redis:6379/1
+  #     - QDRANT_HOST=qdrant
+  #     - OLLAMA_BASE_URL=http://ollama:11434
+  #   volumes:
+  #     - .:/app
+  #     - media_data:/app/data/uploads
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - qdrant
+  #   networks:
+  #     - iosp-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  ollama_data:
+  static_data:
+  media_data:
+
+networks:
+  iosp-network:
+    driver: bridge
