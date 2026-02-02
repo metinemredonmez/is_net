@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
 
     # Local apps
+    'apps.core',
     'apps.accounts',
     'apps.documents',
     'apps.rag',
@@ -82,7 +83,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME', 'iosp_db'),
         'USER': os.environ.get('DB_USER', 'iosp_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'iosp_secret_2024'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),  # Required - no default!
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
@@ -144,6 +145,20 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # Rate Limiting / Throttling
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',      # Anonim kullanıcılar
+        'user': '100/minute',     # Giriş yapmış kullanıcılar
+        'login': '5/minute',      # Login endpoint (brute-force koruması)
+        'upload': '10/hour',      # Dosya yükleme
+        'rag_query': '30/minute', # RAG sorguları
+        'burst': '10/second',     # Burst koruması
+    },
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
 }
 
 # JWT Settings

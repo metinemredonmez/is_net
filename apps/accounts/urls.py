@@ -2,15 +2,14 @@
 Accounts API URLs
 """
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from . import views
 
 app_name = 'accounts'
 
 urlpatterns = [
-    # JWT Auth
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # JWT Auth (rate limited)
+    path('token/', views.ThrottledTokenObtainPairView.as_view(), name='token_obtain'),
+    path('token/refresh/', views.ThrottledTokenRefreshView.as_view(), name='token_refresh'),
 
     # User endpoints
     path('me/', views.CurrentUserView.as_view(), name='current_user'),

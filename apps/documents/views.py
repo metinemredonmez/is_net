@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Document, DocumentCategory
 from .serializers import DocumentSerializer, DocumentCategorySerializer
+from apps.core.throttling import UploadRateThrottle
 
 
 class DocumentListCreateView(generics.ListCreateAPIView):
@@ -15,6 +16,12 @@ class DocumentListCreateView(generics.ListCreateAPIView):
     serializer_class = DocumentSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_throttles(self):
+        """POST (upload) için özel throttle uygula"""
+        if self.request.method == 'POST':
+            return [UploadRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         qs = super().get_queryset()

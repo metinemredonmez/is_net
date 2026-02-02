@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from .services import get_rag_service
+from apps.core.throttling import RAGQueryRateThrottle
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class RAGQueryView(APIView):
     Dokümanlardan soru-cevap
     """
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [RAGQueryRateThrottle]
 
     @extend_schema(
         summary="RAG Query",
