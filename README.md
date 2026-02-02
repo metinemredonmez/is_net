@@ -2,19 +2,49 @@
 
 Kurumsal doküman yönetimi ve yapay zeka destekli soru-cevap sistemi. RAG (Retrieval-Augmented Generation) teknolojisi ile şirket içi dokümanlara dayalı akıllı asistan.
 
+## Özellikler
+
+- 🔐 **Güvenli Kimlik Doğrulama**: JWT tabanlı auth, rol bazlı erişim kontrolü
+- 📄 **Doküman Yönetimi**: PDF, DOCX, TXT, MD dosya desteği
+- 🤖 **AI Asistan**: RAG tabanlı akıllı soru-cevap sistemi
+- 📊 **Dashboard**: Gerçek zamanlı istatistikler ve raporlar
+- 🔄 **Async İşleme**: Celery ile arka plan görevleri
+- 📈 **Monitoring**: Prometheus + Grafana ile izleme
+- 🔒 **Güvenlik**: Rate limiting, input validasyonu, CORS
+
 ## Teknolojiler
 
+### Backend
 | Katman | Teknoloji |
 |--------|-----------|
-| Backend | Django 5.0, Django REST Framework |
+| Framework | Django 5.0, Django REST Framework |
 | Veritabanı | PostgreSQL 15 |
 | Cache | Redis 7 |
-| Vector DB | Qdrant |
-| LLM | Ollama (llama2, nomic-embed-text) |
+| Async Tasks | Celery |
+| Vector DB | ChromaDB |
+| LLM | OpenAI API |
 | RAG Pipeline | LangChain |
 | Auth | JWT (SimpleJWT) |
 | Admin | Jazzmin |
 | API Docs | drf-spectacular (OpenAPI 3.0) |
+
+### Frontend
+| Katman | Teknoloji |
+|--------|-----------|
+| Framework | Next.js 15 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS + shadcn/ui |
+| State | Zustand |
+| HTTP | Axios |
+
+### DevOps
+| Katman | Teknoloji |
+|--------|-----------|
+| Containerization | Docker & Docker Compose |
+| CI/CD | GitHub Actions |
+| Reverse Proxy | Nginx |
+| SSL | Let's Encrypt |
+| Monitoring | Prometheus + Grafana |
 
 ## Özellikler
 
@@ -183,15 +213,123 @@ curl -X POST http://localhost:8000/api/rag/query/ \
 ## Geliştirme
 
 ```bash
-# Testleri çalıştır
-python manage.py test
+# Backend testleri
+pytest --cov=apps --cov-report=html
+
+# Frontend testleri
+cd frontend && npm run test
 
 # Linting
-flake8 .
+ruff check .
+cd frontend && npm run lint
 
 # Migration oluştur
 python manage.py makemigrations
 ```
+
+## Frontend Geliştirme
+
+```bash
+cd frontend
+
+# Bağımlılıkları yükle
+npm install
+
+# Development server
+npm run dev
+
+# Production build
+npm run build
+
+# Testler
+npm run test
+```
+
+## CI/CD Pipeline
+
+### Continuous Integration
+- Backend ve frontend testleri
+- Linting ve security scans
+- Docker build test
+
+```bash
+# CI workflow trigger
+git push origin develop
+```
+
+### Continuous Deployment
+- Staging: develop branch'ine push
+- Production: tag oluşturma (v*.*.*)
+
+```bash
+# Staging deploy
+git push origin develop
+
+# Production deploy
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## Monitoring
+
+```bash
+# Monitoring stack'i başlat
+docker compose -f docker-compose.monitoring.yml up -d
+
+# Erişim
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3001 (admin/admin)
+```
+
+## Backup & Restore
+
+```bash
+# Manual backup
+./scripts/backup.sh manual
+
+# Scheduled backup (cron ile)
+./scripts/backup.sh scheduled
+
+# Backup'ları listele
+./scripts/restore.sh list
+
+# Database restore
+./scripts/restore.sh postgres /path/to/backup.sql.gz
+
+# Media restore
+./scripts/restore.sh media /path/to/backup.tar.gz
+
+# Rollback
+./scripts/rollback.sh quick
+```
+
+## Production Deployment
+
+```bash
+# Production compose ile başlat
+docker compose -f docker-compose.prod.yml up -d
+
+# Migrations
+docker compose -f docker-compose.prod.yml exec backend python manage.py migrate
+
+# Static files
+docker compose -f docker-compose.prod.yml exec backend python manage.py collectstatic
+
+# SSL sertifikası (Let's Encrypt)
+docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+    -d iosp.example.com -d api.iosp.example.com
+```
+
+## Güvenlik
+
+- JWT token authentication with refresh tokens
+- Rate limiting on API endpoints (10 req/s general, 5 req/min login)
+- File upload validation (MIME type, size, extension)
+- CORS configuration
+- SQL injection protection (Django ORM)
+- XSS protection (React escaping)
+- CSRF protection
+- Secure headers (HSTS, X-Frame-Options, etc.)
 
 ## Lisans
 
