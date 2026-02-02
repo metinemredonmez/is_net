@@ -2,12 +2,16 @@
 Chat API Views
 """
 import time
+import logging
+from django.conf import settings
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Conversation, Message
 from .serializers import ConversationSerializer, MessageSerializer
 from apps.rag.services import get_rag_service
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationListCreateView(generics.ListCreateAPIView):
@@ -99,17 +103,32 @@ class AskQuestionView(APIView):
             })
 
         except Exception as e:
-            # Save error message
+            # Log the actual error for debugging
+            logger.exception(
+                f"RAG query error for user {request.user.id}, "
+                f"conversation {pk}: {str(e)}"
+            )
+
+            # Sanitized error message for user (don't expose internal details)
+            user_error_message = (
+                "Üzgünüm, şu anda yanıt oluşturulamıyor. "
+                "Lütfen daha sonra tekrar deneyin."
+            )
+
+            # Save error message (sanitized)
             Message.objects.create(
                 conversation=conversation,
                 role='assistant',
-                content=f"Üzgünüm, bir hata oluştu: {str(e)}",
+                content=user_error_message,
                 confidence=0
             )
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+
+            # Return sanitized error response
+            error_response = {'error': 'Sorgu işlenirken bir hata oluştu.'}
+            if settings.DEBUG:
+                error_response['debug_message'] = str(e)
+
+            return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class MessageFeedbackView(APIView):

@@ -285,3 +285,41 @@ CHUNK_OVERLAP = 200
 # Audit Log Configuration
 # ===========================================
 AUDITLOG_INCLUDE_ALL_MODELS = True
+
+# ===========================================
+# Security Headers Configuration
+# ===========================================
+# Clickjacking protection
+X_FRAME_OPTIONS = 'DENY'
+
+# XSS Protection
+SECURE_BROWSER_XSS_FILTER = True
+
+# Content type sniffing protection
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Referrer policy
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
+# Production-only SSL/HTTPS settings
+if not DEBUG:
+    # Redirect HTTP to HTTPS
+    SECURE_SSL_REDIRECT = True
+
+    # HSTS (HTTP Strict Transport Security)
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    # Secure cookies
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # Proxy header (for load balancers)
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    # Session security
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SAMESITE = 'Lax'

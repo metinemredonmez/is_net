@@ -1,6 +1,7 @@
 """
 RAG API Views
 """
+from django.conf import settings
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,6 +9,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from .services import get_rag_service
 from apps.core.throttling import RAGQueryRateThrottle
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +73,11 @@ class RAGQueryView(APIView):
             return Response(result)
 
         except Exception as e:
-            logger.error(f"RAG query hatası: {e}")
-            return Response(
-                {'error': 'Sorgulama sırasında hata oluştu'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"RAG query error for user {request.user.id}: {e}")
+            error_response = {'error': 'Sorgulama sırasında hata oluştu'}
+            if settings.DEBUG:
+                error_response['debug_message'] = str(e)
+            return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ProcessDocumentView(APIView):
@@ -93,17 +95,19 @@ class ProcessDocumentView(APIView):
                     'chunk_count': result['chunk_count']
                 })
             else:
-                return Response(
-                    {'error': result.get('error', 'İşleme hatası')},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                # Log internal error but return sanitized message
+                logger.error(f"Document processing failed: {result.get('error')}")
+                error_response = {'error': 'Doküman işlenirken bir hata oluştu'}
+                if settings.DEBUG:
+                    error_response['debug_message'] = result.get('error')
+                return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         except Exception as e:
-            logger.error(f"Doküman işleme hatası: {e}")
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"Document processing error for {document_id}: {e}")
+            error_response = {'error': 'Doküman işlenirken beklenmeyen bir hata oluştu'}
+            if settings.DEBUG:
+                error_response['debug_message'] = str(e)
+            return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class SemanticSearchView(APIView):
@@ -112,11 +116,19 @@ class SemanticSearchView(APIView):
 
     def get(self, request):
         query = request.query_params.get('q')
-        k = int(request.query_params.get('k', 5))
+        k_param = request.query_params.get('k', '5')
 
         if not query:
             return Response(
                 {'error': 'Arama sorgusu gerekli (q parametresi)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            k = int(k_param)
+        except ValueError:
+            return Response(
+                {'error': 'k parametresi geçerli bir sayı olmalı'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -126,11 +138,11 @@ class SemanticSearchView(APIView):
             return Response({'results': results})
 
         except Exception as e:
-            logger.error(f"Search hatası: {e}")
-            return Response(
-                {'error': 'Arama hatası'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"Semantic search error: {e}")
+            error_response = {'error': 'Arama sırasında bir hata oluştu'}
+            if settings.DEBUG:
+                error_response['debug_message'] = str(e)
+            return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class HealthCheckView(APIView):
@@ -145,25 +157,45 @@ class HealthCheckView(APIView):
 
         # Check Ollama
         try:
-            import httpx
-            from django.conf import settings
-            response = httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=5)
+            response = httpx.get(
+                f"{settings.OLLAMA_BASE_URL}/api/tags",
+                timeout=5.0
+            )
             health['services']['ollama'] = 'up' if response.status_code == 200 else 'down'
-        except:
+        except httpx.RequestError as e:
+            logger.warning(f"Ollama health check failed: {e}")
             health['services']['ollama'] = 'down'
+        except Exception as e:
+            logger.error(f"Unexpected error checking Ollama: {e}")
+            health['services']['ollama'] = 'error'
 
         # Check Qdrant
         try:
             from qdrant_client import QdrantClient
-            from django.conf import settings
-            client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT, timeout=5)
+            from qdrant_client.http.exceptions import UnexpectedResponse
+
+            client = QdrantClient(
+                host=settings.QDRANT_HOST,
+                port=settings.QDRANT_PORT,
+                timeout=5.0
+            )
             client.get_collections()
             health['services']['qdrant'] = 'up'
-        except:
+        except UnexpectedResponse as e:
+            logger.warning(f"Qdrant health check failed: {e}")
             health['services']['qdrant'] = 'down'
+        except ConnectionError as e:
+            logger.warning(f"Qdrant connection failed: {e}")
+            health['services']['qdrant'] = 'down'
+        except Exception as e:
+            logger.error(f"Unexpected error checking Qdrant: {e}")
+            health['services']['qdrant'] = 'error'
 
         # Overall status
-        if 'down' in health['services'].values():
+        service_statuses = health['services'].values()
+        if 'error' in service_statuses:
+            health['status'] = 'unhealthy'
+        elif 'down' in service_statuses:
             health['status'] = 'degraded'
 
         return Response(health)
