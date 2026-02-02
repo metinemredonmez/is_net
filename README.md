@@ -35,16 +35,20 @@ Kurumsal doküman yönetimi ve yapay zeka destekli soru-cevap sistemi. RAG (Retr
 git clone https://github.com/metinemredonmez/is_net.git
 cd is_net
 
-# .env dosyasını oluştur
+# .env dosyasını oluştur ve güvenli secret'lar generate et
 cp .env.example .env
+chmod +x scripts/generate-secrets.sh
+./scripts/generate-secrets.sh
 
 # Servisleri başlat
 docker-compose up -d
 
-# Ollama modellerini indir (ilk kurulumda)
-docker exec -it iosp-ollama ollama pull llama2
-docker exec -it iosp-ollama ollama pull nomic-embed-text
+# Platform kurulumunu tamamla (migration, admin user, models)
+chmod +x scripts/start.sh
+./scripts/start.sh
 ```
+
+> **Güvenlik Notu:** `.env` dosyası hassas bilgiler içerir. Asla git'e commit etmeyin!
 
 ### Manuel Kurulum
 

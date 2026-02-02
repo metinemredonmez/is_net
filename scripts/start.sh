@@ -5,6 +5,19 @@ set -e
 
 echo "🚀 IOSP Platform başlatılıyor..."
 
+# .env dosyası kontrolü
+if [ ! -f .env ]; then
+    echo "❌ HATA: .env dosyası bulunamadı!"
+    echo "   Lütfen önce .env.example dosyasını .env olarak kopyalayın:"
+    echo "   cp .env.example .env"
+    echo "   Ardından güvenli değerler oluşturun:"
+    echo "   ./scripts/generate-secrets.sh"
+    exit 1
+fi
+
+# .env dosyasını yükle
+export $(grep -v '^#' .env | xargs)
+
 # 1. Ollama model kontrol
 echo "📦 Ollama modelleri kontrol ediliyor..."
 docker exec iosp-ollama ollama list 2>/dev/null || true
@@ -26,17 +39,33 @@ echo "✅ Modeller hazır!"
 echo "🔄 Veritabanı migration'ları çalıştırılıyor..."
 docker exec iosp-web python manage.py migrate --noinput
 
-# 3. Superuser oluştur
+# 3. Superuser oluştur (environment variable'lardan)
 echo "👤 Admin kullanıcı kontrol ediliyor..."
+
+# Admin credentials kontrolü
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@iosp.local}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+
+if [ -z "$ADMIN_PASSWORD" ]; then
+    # Rastgele şifre oluştur
+    ADMIN_PASSWORD=$(openssl rand -base64 16)
+    echo "⚠️  ADMIN_PASSWORD tanımlı değil, rastgele şifre oluşturuldu."
+fi
+
 docker exec iosp-web python manage.py shell -c "
 from apps.accounts.models import User
-if not User.objects.filter(email='admin@isnet.com.tr').exists():
+import os
+
+email = os.environ.get('ADMIN_EMAIL', 'admin@iosp.local')
+password = os.environ.get('ADMIN_PASSWORD', '')
+
+if not User.objects.filter(email=email).exists():
     User.objects.create_superuser(
-        email='admin@isnet.com.tr',
-        password='admin123',
+        email=email,
+        password=password,
         full_name='IOSP Admin'
     )
-    print('✅ Admin kullanıcı oluşturuldu: admin@isnet.com.tr / admin123')
+    print(f'✅ Admin kullanıcı oluşturuldu: {email}')
 else:
     print('ℹ️  Admin kullanıcı zaten mevcut')
 "
@@ -54,7 +83,10 @@ echo "🌐 Admin Panel: http://localhost:8000/admin/"
 echo "📚 API Docs:    http://localhost:8000/api/docs/"
 echo ""
 echo "👤 Giriş Bilgileri:"
-echo "   Email:    admin@isnet.com.tr"
-echo "   Şifre:    admin123"
+echo "   Email:    $ADMIN_EMAIL"
+if [ -n "$ADMIN_PASSWORD" ]; then
+    echo "   Şifre:    (env ADMIN_PASSWORD'da tanımlı)"
+fi
 echo ""
+echo "⚠️  ÖNEMLİ: Şifreyi .env dosyasında saklayın!"
 echo "=========================================="

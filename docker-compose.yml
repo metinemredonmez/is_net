@@ -5,10 +5,12 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: iosp-postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: iosp_user
-      POSTGRES_PASSWORD: iosp_secret_2024
-      POSTGRES_DB: iosp_db
+      POSTGRES_USER: ${DB_USER:-iosp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-iosp_db}
     ports:
       - "5432:5432"
     volumes:
@@ -79,22 +81,24 @@ services:
     container_name: iosp-web
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - DEBUG=True
-      - SECRET_KEY=django-insecure-change-this-in-production-iosp-2024
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=iosp_db
-      - DB_USER=iosp_user
-      - DB_PASSWORD=iosp_secret_2024
+      - DB_NAME=${DB_NAME:-iosp_db}
+      - DB_USER=${DB_USER:-iosp_user}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama2
-      - OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
     volumes:
       - .:/app
       - static_data:/app/staticfiles
@@ -123,12 +127,15 @@ services:
   #     dockerfile: Dockerfile
   #   container_name: iosp-celery
   #   command: celery -A iosp worker -l INFO
+  #   env_file:
+  #     - .env
   #   environment:
-  #     - DEBUG=True
+  #     - DEBUG=${DEBUG:-False}
+  #     - SECRET_KEY=${SECRET_KEY}
   #     - DB_HOST=postgres
-  #     - DB_NAME=iosp_db
-  #     - DB_USER=iosp_user
-  #     - DB_PASSWORD=iosp_secret_2024
+  #     - DB_NAME=${DB_NAME:-iosp_db}
+  #     - DB_USER=${DB_USER:-iosp_user}
+  #     - DB_PASSWORD=${DB_PASSWORD}
   #     - REDIS_URL=redis://redis:6379/0
   #     - CELERY_BROKER_URL=redis://redis:6379/1
   #     - QDRANT_HOST=qdrant
