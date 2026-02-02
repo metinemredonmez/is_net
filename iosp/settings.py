@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     'auditlog',
     'import_export',
     'drf_spectacular',
+    'django_celery_beat',      # Celery periodic tasks
+    'django_celery_results',   # Celery task results
 
     # Local apps
     'apps.core',

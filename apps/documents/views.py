@@ -1,18 +1,25 @@
 """
 Documents API Views
 """
+import logging
 from django.db.models import Q
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Document, DocumentCategory
-from .serializers import DocumentSerializer, DocumentCategorySerializer
+from .serializers import (
+    DocumentSerializer,
+    DocumentCategorySerializer,
+    DocumentStatusSerializer,
+)
 from apps.core.throttling import UploadRateThrottle
 from apps.core.permissions import (
     IsOwnerOrAdminOrPublic,
     CanUploadDocuments,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentListCreateView(generics.ListCreateAPIView):
@@ -122,6 +129,8 @@ class ProcessDocumentView(APIView):
     """
     Dokümanı işle (embedding oluştur).
     Sadece doküman sahibi veya admin işleyebilir.
+
+    POST /api/documents/{id}/process/
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -150,20 +159,128 @@ class ProcessDocumentView(APIView):
             )
 
         if document.status == 'processing':
+            return Response({
+                'message': 'Doküman şu anda işleniyor',
+                'status': document.status,
+                'progress': document.processing_progress,
+                'task_id': document.task_id,
+            }, status=status.HTTP_200_OK)
+
+        # Celery task ile async işleme
+        try:
+            from .tasks import process_document
+            task = process_document.delay(str(document.id))
+
+            document.status = Document.Status.PENDING
+            document.task_id = task.id
+            document.processing_progress = 0
+            document.save(update_fields=['status', 'task_id', 'processing_progress'])
+
+            logger.info(f"Document processing queued: {document.id}, task: {task.id}")
+
+            return Response({
+                'message': 'Doküman işleme kuyruğuna alındı',
+                'document_id': str(document.id),
+                'status': document.status,
+                'task_id': task.id,
+            }, status=status.HTTP_202_ACCEPTED)
+
+        except Exception as e:
+            logger.error(f"Failed to queue document processing: {e}")
             return Response(
-                {'message': 'Doküman şu anda işleniyor', 'status': document.status},
-                status=status.HTTP_200_OK
+                {'error': 'İşleme kuyruğuna eklenirken hata oluştu'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        # TODO: Celery task ile async işleme
-        document.status = 'processing'
-        document.save()
 
-        return Response({
-            'message': 'Doküman işleme kuyruğuna alındı',
-            'document_id': str(document.id),
-            'status': document.status
-        })
+class DocumentStatusView(APIView):
+    """
+    Doküman işleme durumu endpoint'i.
+
+    GET /api/documents/{id}/status/
+
+    Polling ile kullanılabilir:
+    - status: pending, processing, completed, failed
+    - processing_progress: 0-100
+    - chunk_count: işlenen chunk sayısı
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            document = Document.objects.get(pk=pk)
+        except Document.DoesNotExist:
+            return Response(
+                {'error': 'Doküman bulunamadı'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Yetki kontrolü
+        user = request.user
+        if not (
+            user.is_staff or
+            user.role in ['admin', 'manager'] or
+            document.uploaded_by == user or
+            document.is_public
+        ):
+            return Response(
+                {'error': 'Bu dokümanı görüntüleme yetkiniz yok'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = DocumentStatusSerializer(document)
+        return Response(serializer.data)
+
+
+class ReprocessDocumentView(APIView):
+    """
+    Başarısız dokümanı yeniden işle.
+
+    POST /api/documents/{id}/reprocess/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            document = Document.objects.get(pk=pk)
+        except Document.DoesNotExist:
+            return Response(
+                {'error': 'Doküman bulunamadı'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Yetki kontrolü
+        user = request.user
+        if not (user.is_staff or user.role in ['admin', 'manager'] or document.uploaded_by == user):
+            return Response(
+                {'error': 'Bu dokümanı yeniden işleme yetkiniz yok'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Sadece failed veya pending dokümanlar yeniden işlenebilir
+        if document.status not in [Document.Status.FAILED, Document.Status.PENDING]:
+            return Response({
+                'error': f'Bu doküman yeniden işlenemez (durum: {document.status})',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .tasks import reprocess_document
+            task = reprocess_document.delay(str(document.id))
+
+            logger.info(f"Document reprocessing queued: {document.id}, task: {task.id}")
+
+            return Response({
+                'message': 'Doküman yeniden işleme kuyruğuna alındı',
+                'document_id': str(document.id),
+                'task_id': task.id,
+            }, status=status.HTTP_202_ACCEPTED)
+
+        except Exception as e:
+            logger.error(f"Failed to queue document reprocessing: {e}")
+            return Response(
+                {'error': 'Yeniden işleme kuyruğuna eklenirken hata oluştu'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class CategoryListView(generics.ListAPIView):

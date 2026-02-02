@@ -19,6 +19,8 @@ psycopg2-binary==2.9.9
 redis==5.0.1
 celery==5.3.6
 django-celery-beat==2.6.0
+django-celery-results==2.5.1  # Task result storage
+flower==2.0.1                 # Celery monitoring
 
 # REST API
 djangorestframework==3.14.0

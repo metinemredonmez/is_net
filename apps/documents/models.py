@@ -85,8 +85,14 @@ class Document(models.Model):
         choices=Status.choices,
         default=Status.PENDING
     )
+    processing_progress = models.PositiveIntegerField(
+        _('İşleme İlerlemesi'),
+        default=0,
+        help_text='0-100 arası ilerleme yüzdesi'
+    )
     chunk_count = models.PositiveIntegerField(_('Chunk Sayısı'), default=0)
     error_message = models.TextField(_('Hata Mesajı'), blank=True)
+    task_id = models.CharField(_('Celery Task ID'), max_length=255, blank=True)
 
     # Metadata
     uploaded_by = models.ForeignKey(

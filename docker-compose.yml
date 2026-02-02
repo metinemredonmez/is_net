@@ -120,35 +120,103 @@ services:
              python manage.py collectstatic --noinput &&
              python manage.py runserver 0.0.0.0:8000"
 
-  # Celery Worker (opsiyonel - async işler için)
-  # celery:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: iosp-celery
-  #   command: celery -A iosp worker -l INFO
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - DEBUG=${DEBUG:-False}
-  #     - SECRET_KEY=${SECRET_KEY}
-  #     - DB_HOST=postgres
-  #     - DB_NAME=${DB_NAME:-iosp_db}
-  #     - DB_USER=${DB_USER:-iosp_user}
-  #     - DB_PASSWORD=${DB_PASSWORD}
-  #     - REDIS_URL=redis://redis:6379/0
-  #     - CELERY_BROKER_URL=redis://redis:6379/1
-  #     - QDRANT_HOST=qdrant
-  #     - OLLAMA_BASE_URL=http://ollama:11434
-  #   volumes:
-  #     - .:/app
-  #     - media_data:/app/data/uploads
-  #   depends_on:
-  #     - postgres
-  #     - redis
-  #     - qdrant
-  #   networks:
-  #     - iosp-network
+  # Celery Worker - Async document processing
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iosp-celery-worker
+    command: celery -A iosp worker -l INFO -Q default,documents,rag --concurrency=2
+    env_file:
+      - .env
+    environment:
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-iosp_db}
+      - DB_USER=${DB_USER:-iosp_user}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - .:/app
+      - media_data:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - iosp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A iosp inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Beat - Scheduled tasks
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iosp-celery-beat
+    command: celery -A iosp beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file:
+      - .env
+    environment:
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-iosp_db}
+      - DB_USER=${DB_USER:-iosp_user}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    networks:
+      - iosp-network
+    restart: unless-stopped
+
+  # Flower - Celery monitoring dashboard
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iosp-flower
+    command: celery -A iosp flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin123}
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    networks:
+      - iosp-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
