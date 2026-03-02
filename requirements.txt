@@ -32,7 +32,7 @@ djangorestframework-simplejwt==5.3.1
 # RAG & AI
 langchain==0.1.4
 langchain-community==0.0.16
-qdrant-client==1.7.0
+qdrant-client==1.7.1
 sentence-transformers==2.3.1
 ollama==0.1.6
 
